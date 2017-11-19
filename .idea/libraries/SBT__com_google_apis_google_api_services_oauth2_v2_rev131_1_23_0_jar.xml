@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.google.apis:google-api-services-oauth2:v2-rev131-1.23.0:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.apis/google-api-services-oauth2/jars/google-api-services-oauth2-v2-rev131-1.23.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.apis/google-api-services-oauth2/srcs/google-api-services-oauth2-v2-rev131-1.23.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.google.apis:google-api-services-drive:v3-rev90-1.23.0:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.apis/google-api-services-drive/jars/google-api-services-drive-v3-rev90-1.23.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.apis/google-api-services-drive/srcs/google-api-services-drive-v3-rev90-1.23.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

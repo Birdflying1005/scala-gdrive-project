@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.google.oauth-client:google-oauth-client:1.23.0:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.oauth-client/google-oauth-client/jars/google-oauth-client-1.23.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.oauth-client/google-oauth-client/srcs/google-oauth-client-1.23.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

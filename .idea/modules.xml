@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="ProjectModuleManager">
+    <modules>
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/IdeaProjects-scala-gdrive-project.iml" filepath="$PROJECT_DIR$/.idea/modules/IdeaProjects-scala-gdrive-project.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scala-gdrive-project.iml" filepath="$PROJECT_DIR$/.idea/modules/scala-gdrive-project.iml" />
+      <module fileurl="file://$PROJECT_DIR$/.idea/modules/scala-gdrive-project-build.iml" filepath="$PROJECT_DIR$/.idea/modules/scala-gdrive-project-build.iml" />
+    </modules>
+  </component>
+</project>

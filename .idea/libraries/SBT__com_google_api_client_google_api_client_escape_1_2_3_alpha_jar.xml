@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.google.api.client:google-api-client-escape:1.2.3-alpha:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.api.client/google-api-client-escape/jars/google-api-client-escape-1.2.3-alpha.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.google.api.client/google-api-client-escape/srcs/google-api-client-escape-1.2.3-alpha-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

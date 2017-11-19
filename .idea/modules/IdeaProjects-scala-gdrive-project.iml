@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<module external.linked.project.id="scala-gdrive-project" external.linked.project.path="/mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project" external.root.project.path="$MODULE_DIR$/../.." external.system.id="SBT" type="JAVA_MODULE" version="4">
+  <component name="NewModuleRootManager" LANGUAGE_LEVEL="JDK_1_8">
+    <output url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/classes" />
+    <output-test url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/test-classes" />
+    <exclude-output />
+    <content url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project">
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/main/java" isTestSource="false" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/main/scala" isTestSource="false" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/main/scala-2.12" isTestSource="false" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/test/java" isTestSource="true" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/test/scala" isTestSource="true" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/test/scala-2.12" isTestSource="true" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/src_managed/main" isTestSource="false" generated="true" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/src_managed/test" isTestSource="true" generated="true" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/main/resources" type="java-resource" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/resource_managed/main" type="java-resource" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/src/test/resources" type="java-test-resource" />
+      <sourceFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target/scala-2.12/resource_managed/test" type="java-test-resource" />
+      <excludeFolder url="file:///mnt/lin/fma1/homestorage/IdeaProjects/scala-gdrive-project/target" />
+    </content>
+    <orderEntry type="inheritedJdk" />
+    <orderEntry type="sourceFolder" forTests="false" />
+    <orderEntry type="library" name="SBT: org.scala-lang:scala-library:2.12.4:jar" level="project" />
+    <orderEntry type="library" scope="TEST" name="SBT: org.scalatest:scalatest_2.12:3.0.4:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.scalactic:scalactic_2.12:3.0.4:jar" level="project" />
+    <orderEntry type="library" scope="TEST" name="SBT: org.scala-lang.modules:scala-xml_2.12:1.0.5:jar" level="project" />
+    <orderEntry type="library" scope="TEST" name="SBT: org.scala-lang.modules:scala-parser-combinators_2.12:1.0.4:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.scala-lang:scala-reflect:2.12.4:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.mortbay.jetty:servlet-api:2.5-20081211:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.mortbay.jetty:jetty-util:6.1.26:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.mortbay.jetty:jetty:6.1.26:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.codehaus.jackson:jackson-core-asl:1.5.7:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.apache.httpcomponents:httpcore:4.0.1:jar" level="project" />
+    <orderEntry type="library" name="SBT: org.apache.httpcomponents:httpclient:4.0.1:jar" level="project" />
+    <orderEntry type="library" name="SBT: commons-logging:commons-logging:1.1.1:jar" level="project" />
+    <orderEntry type="library" name="SBT: commons-codec:commons-codec:1.3:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.oauth-client:google-oauth-client-jetty:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.oauth-client:google-oauth-client-java6:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.oauth-client:google-oauth-client:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.http-client:google-http-client-jackson2:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.http-client:google-http-client:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.guava:guava-jdk5:17.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.code.findbugs:jsr305:1.3.9:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.apis:google-api-services-oauth2:v2-rev131-1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.apis:google-api-services-drive:v3-rev90-1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-util:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-repackaged-com-google-common-base:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-json:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-javanet:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-http:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api.client:google-api-client-escape:1.2.3-alpha:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api-client:google-api-client-java6:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.google.api-client:google-api-client:1.23.0:jar" level="project" />
+    <orderEntry type="library" name="SBT: com.fasterxml.jackson.core:jackson-core:2.1.3:jar" level="project" />
+  </component>
+</module>
