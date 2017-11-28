@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.diogonunes:JCDP:2.0.3.1:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.diogonunes/JCDP/jars/JCDP-2.0.3.1.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.diogonunes/JCDP/srcs/JCDP-2.0.3.1-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: org.jboss.aesh:aesh:0.66.19:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/org.jboss.aesh/aesh/jars/aesh-0.66.19.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/org.jboss.aesh/aesh/srcs/aesh-0.66.19-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>

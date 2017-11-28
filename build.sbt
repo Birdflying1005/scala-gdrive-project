@@ -17,5 +17,9 @@ libraryDependencies ++= List(
   "com.google.api.client" % "google-api-client-json" % "1.2.3-alpha",
   "com.google.api.client" % "google-api-client-util" % "1.2.3-alpha",
   "org.scalactic" %% "scalactic" % "3.0.4",
-  "org.scalatest" %% "scalatest" % "3.0.4" % "test"
+  "org.scalatest" %% "scalatest" % "3.0.4" % "test",
+  "jline" % "jline" % "2.14.5",
+  "me.tongfei" % "progressbar" % "0.5.5",
+  "org.jboss.aesh" % "aesh" % "0.66.19",
+  "com.diogonunes" % "JCDP" % "2.0.3.1"
 )

@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: org.fusesource.jansi:jansi:1.16:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/org.fusesource.jansi/jansi/jars/jansi-1.16.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/org.fusesource.jansi/jansi/srcs/jansi-1.16-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
