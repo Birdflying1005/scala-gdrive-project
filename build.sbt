@@ -21,5 +21,6 @@ libraryDependencies ++= List(
   "jline" % "jline" % "2.14.5",
   "me.tongfei" % "progressbar" % "0.5.5",
   "org.jboss.aesh" % "aesh" % "0.66.19",
-  "com.diogonunes" % "JCDP" % "2.0.3.1"
+  "com.diogonunes" % "JCDP" % "2.0.3.1",
+  "com.google.code.gson" % "gson" % "2.8.2"
 )

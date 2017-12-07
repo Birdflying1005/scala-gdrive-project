@@ -1,311 +1,205 @@
-import java.io.{BufferedWriter, ByteArrayOutputStream, FileOutputStream, FileWriter}
+import java.io._
 import java.nio.charset.{Charset, StandardCharsets}
 
-import com.google.api.client.auth.oauth2.Credential
-import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
-import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
-import com.google.api.client.googleapis.auth.oauth2.{GoogleAuthorizationCodeFlow, GoogleClientSecrets}
-import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport
-import com.google.api.client.json.jackson2.JacksonFactory
-import com.google.api.client.util.store.FileDataStoreFactory
-import com.google.api.services.drive.{Drive, DriveScopes}
+import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.{File => GFile}
+import com.google.gson.{Gson, GsonBuilder}
+import com.google.gson.reflect.TypeToken
 
 import scala.collection.JavaConverters._
 import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.Queue
-import util.{Failure, Success, Try}
 import java.util.concurrent.Executors
-import java.util.concurrent.atomic.{AtomicInteger, AtomicReference}
 
 import AeshExample.ExampleValidatorInvocationProvider
 import com.diogonunes.jcdp.color.ColoredPrinter
-import com.diogonunes.jcdp.color.api.Ansi.{FColor, BColor, Attribute}
-import com.google.api.client.http.{HttpRequest, HttpRequestInitializer}
+import com.diogonunes.jcdp.color.api.Ansi.{Attribute, BColor, FColor}
 import me.tongfei.progressbar.ProgressBar
 import org.jboss.aesh.cl
-import org.jboss.aesh.cl.validator.{OptionValidator, OptionValidatorException}
 import org.jboss.aesh.cl.{Arguments, CommandDefinition}
 import org.jboss.aesh.console.command.{Command, CommandResult}
 import org.jboss.aesh.console.command.invocation.CommandInvocation
-import org.jboss.aesh.console.command.validator.{ValidatorInvocation, ValidatorInvocationProvider}
-import org.jboss.aesh.console.{AeshConsoleBuilder, AeshContext, Prompt}
+import org.jboss.aesh.console.{AeshConsoleBuilder, Prompt}
 import org.jboss.aesh.console.settings.SettingsBuilder
 import org.jboss.aesh.cl.completer.OptionCompleter
 import org.jboss.aesh.console.command.completer.CompleterInvocation
-/*
-import org.jboss.aesh.cl.internal.ProcessedOptionBuilder
-import org.jboss.aesh.cl.builder.CommandBuilder
-import org.jboss.aesh.cl.completer.OptionCompleter
-import org.jboss.aesh.console.command.completer.CompleterInvocation
-import org.jboss.aesh.console.command.registry.AeshCommandRegistryBuilder
-*/
 
+import scala.io.Source
 import scala.annotation.tailrec
 
 object MyDrive {
-  private val APPLICATION_NAME = "scala-gdrive-project"
-  private val DATA_STORE_DIR = System.getProperty("user.home") + "/.credentials/scala-gdrive-project"
-  private val DATA_STORE_FACTORY =
-    new FileDataStoreFactory(new java.io.File(DATA_STORE_DIR))
-  private val JSON_FACTORY = JacksonFactory.getDefaultInstance
-  private val HTTP_TRANSPORT = GoogleNetHttpTransport.newTrustedTransport
-  private val SCOPES = ListBuffer[String](DriveScopes.DRIVE).asJava
-
-  private val curMyDir: AtomicReference[MyDir] = new AtomicReference[MyDir]()
-  private val rootMyDir: AtomicReference[MyDir] = new AtomicReference[MyDir]()
-  private val totalFileList: AtomicReference[List[GFile]] = new AtomicReference[List[GFile]]()
-  private val rootDirGFile: AtomicReference[GFile] = new AtomicReference[GFile]()
-
-  private val averageWordLength: AtomicInteger = new AtomicInteger()
+  private val service: Drive = MyDriveService.getDriveService
+  private var totalFileList: ListBuffer[GFile] = MyDriveService.populateTotalFileList(service)
+  private var rootDirGFile: GFile = service.files().get("root").execute()
+  private var rootMyDir: MyDir = MyDriveService.getDirectoryStructure(totalFileList, rootDirGFile)
+  private var curMyDir: MyDir = rootMyDir
 
   private val colorPrinter = new ColoredPrinter.Builder(1, false).build()
 
-  def setHttpTimeout(requestInitializer: HttpRequestInitializer): HttpRequestInitializer = {
-    new HttpRequestInitializer() {
-      override def initialize(request: HttpRequest): Unit = {
-        requestInitializer.initialize(request)
-        request.setConnectTimeout(3 * 60000)
-        request.setReadTimeout(3 * 60000)
-      }
-    }
-  }
+  private val myDirStack = new MyDirStack()
 
-  def authorize: Credential = {
-    val clientSecrets = GoogleClientSecrets.load(JSON_FACTORY,
-      new java.io.InputStreamReader(new java.io.FileInputStream(DATA_STORE_DIR + "/client_id.json")))
-    val flow =
-      new GoogleAuthorizationCodeFlow.Builder(HTTP_TRANSPORT, JSON_FACTORY, clientSecrets, SCOPES)
-        .setDataStoreFactory(DATA_STORE_FACTORY)
-        .setAccessType("offline")
-        .build()
-    new AuthorizationCodeInstalledApp(flow, new LocalServerReceiver).authorize("user")
-  }
+  sealed trait VerifyPathFailure
+  final object DoubleDotPlacementFailure extends VerifyPathFailure
+  final object DoubleDotCountFailure extends VerifyPathFailure
+  final case class InvalidPathFailure(val dirName: String) extends VerifyPathFailure
+  final case class EmptyFollowingPathFailure(val curDir: MyDir) extends VerifyPathFailure
+  final case class DuplicateNameFailure(val dirName: String) extends VerifyPathFailure
 
-  def getDriveService: com.google.api.services.drive.Drive = {
-    new Drive.Builder(
-      HTTP_TRANSPORT, JSON_FACTORY, setHttpTimeout(authorize))
-      .setApplicationName(APPLICATION_NAME)
-      .build()
-  }
-
-  def populateTotalFileList(service: com.google.api.services.drive.Drive) = {
-    val totalList = ListBuffer[GFile]()
-    var pageToken = ""
-
-    do {
-      val result = service.files.list
-        .setPageSize(1000)
-        .setPageToken(pageToken)
-        .setFields("nextPageToken, files(id, name, parents, mimeType)")
-        .execute()
-      totalList ++= result.getFiles.asScala
-      pageToken = result.getNextPageToken
-      println(pageToken)
-    } while (pageToken != null)
-
-    totalFileList.set(totalList.toList)
-    rootDirGFile.set(service.files().get("root").execute())
-
-    //println("Done processing information")
-  }
-
-  def getDirectoryStructure: MyDir = {
-    /*
-
-    val filenameList = ListBuffer[String]()
-
-    totalList.foreach(file => {
-      filenameList += file.getName + " (" + file.getId + ")"
-    })
-
-    val fivesList = filenameList.sorted.grouped(5)
-
-    fivesList.foreach(println(_))
-    */
-
-    val files = totalFileList.get()
-    val rootDirId = rootDirGFile.get().getId
-
-    averageWordLength.set(files.map(_.getName.length).sum/files.length)
-
-    val dirGFileById = scala.collection.mutable.Map[String, GFile]()
-    val childDirIdsById = scala.collection.mutable.Map[String, ListBuffer[String]]()
-    val childGFilesById = scala.collection.mutable.Map[String, ListBuffer[GFile]]()
-
-    // Add each folder to map such that (Directory ID -> GFile)
-    //files.filter(_.getMimeType == "application/vnd.google-apps.folder").foreach(file => {dirGFileById += (file.getId -> file)})
-    dirGFileById += rootDirId -> rootDirGFile.get()
-
-    // Add each folder (directory ID) to the list of folders (directory IDs) for its parent
-    // Add each folder to the list of folders for its parent
-    files.filter(_.getMimeType == "application/vnd.google-apps.folder").foreach(file => {
-      dirGFileById += (file.getId -> file)
-      Option(file.getParents).foreach(
-        _.asScala.foreach(parent => {
-          if (!childDirIdsById.contains(parent)) childDirIdsById += (parent -> new ListBuffer[String]())
-
-          childDirIdsById(parent) += file.getId
-        })
-      )
-    })
-
-    files.filterNot(_.getMimeType == "application/vnd.google-apps.folder").foreach(file => {
-      Option(file.getParents).foreach(
-        _.asScala.foreach(parent => {
-          if (!childGFilesById.contains(parent)) childGFilesById += (parent -> new ListBuffer[GFile]())
-
-          childGFilesById(parent) += file
-        })
-      )
-    })
-
-    val dirIdQueue = Queue[String]()
-    val myDirById = scala.collection.mutable.Map[String, MyDir]()
-
-    val rootChildDirIds = childDirIdsById(rootDirId)
-    val rootMyDir = new MyDir("/", rootDirId, childGFilesById(rootDirId).toList)
-
-    myDirById += (rootDirId -> rootMyDir)
-    Option(rootChildDirIds).foreach(x => {dirIdQueue ++= x})
-
-    // This is based on assumption that the directory structure follows a tree-like structure
-    // Although I am not 100% sure this is the case, AFAIK unix filesystems prevent this
-    // https://unix.stackexchange.com/a/22406
-    while (!dirIdQueue.isEmpty) {
-      val dirId = dirIdQueue.dequeue()
-      val gfile = dirGFileById(dirId)
-
-      //println("dirId: " + dirId + ", name: " + gfile.getName)
-      // Create new MyDir, add it to map, add it parent MyDir's childDirs
-      val newMyDir = new MyDir(gfile.getName, gfile.getId, util.Try(childGFilesById(dirId).toList).getOrElse(List()))
-      myDirById += dirId -> newMyDir
-
-      // Add children to queue
-      Try(childDirIdsById(dirId)).foreach(childDirIds => {dirIdQueue ++= childDirIds})
-    }
-
-    val dirIdsNotRoot = myDirById.keys.filterNot(_.equals(rootDirId))
-
-    // Add each MyDir to its parents
-    dirIdsNotRoot.foreach(dirId => {
-      Option(dirGFileById(dirId).getParents)
-        .foreach(_.asScala.foreach(parent => {
-          //println("parent: " + parent + ", child: " + dirId)
-          myDirById(parent).childDirs += myDirById(dirId)
-        }))
-    })
-
-    rootMyDir
-  }
-
-  def getCurDir: MyDir = curMyDir.get()
-
-  def getRootDir: MyDir = rootMyDir.get()
-
-  def verifyPath(path: String): util.Try[(String, MyDir, List[String])] = {
-    val tuple = path(0) match {
-      case '/' => (MyDrive.getRootDir, path.slice(1, path.length).split("/").toList)
-      case _ => (MyDrive.getCurDir, path.split("/").toList)
-    }
-
+  /** Verifies that a path is correct
+   *
+   * @param path a path String
+   * @return an instance of VerifyPathFailure or a tuple with 2nd-to-last dir
+   *      3rd-to-last dir (as MyDir), directory list, and a boolean (for leading slash)
+   */
+  def verifyPath(path: String): Either[VerifyPathFailure, (String, MyDir, List[MyDir], Boolean)] = {
     @tailrec
-    def verifyDirs(curDir: MyDir, theLst: List[String], acc: ListBuffer[String]): (String, MyDir, List[String]) = {
+    def verifyDirs(curDir: MyDir, theLst: List[String], acc: ListBuffer[MyDir], leadingSlash: Boolean):
+    Either[VerifyPathFailure, (String, MyDir, List[MyDir], Boolean)] = {
       theLst match {
         case hd :: tl => {
           if (tl.isEmpty) {
-            (hd.toString, curDir, acc.toList)
+            // Having a head but empty tail is base case
+            Right((hd.toString, curDir, acc.toList, leadingSlash))
           } else {
             val matchingDirs = curDir.childDirs.filter(_.name == hd)
 
             if (matchingDirs.length == 0) {
-              throw new Exception()
+              // Invalid path, found no directories
+              Left(InvalidPathFailure(hd))
             } else if (matchingDirs.length == 1) {
-              verifyDirs(matchingDirs.head, tl, acc += curDir.name)
+              // Found exactly one directory with same name
+              verifyDirs(matchingDirs.head, tl, acc += curDir, leadingSlash)
             } else {
               // TODO: Handle multiple directories with the same name
-              throw new Exception()
+              // Found mutiple directories
+              Left(DuplicateNameFailure(hd))
             }
           }
         }
-          // TODO: Handle case of '/'
+        // This only happens if the initial call starts with theLst as Nil
+        // So path must have started with / or ..
         case Nil => {
-          (null, null, null)
+          Left(EmptyFollowingPathFailure(curDir))
         }
       }
     }
 
-    util.Try(verifyDirs(tuple._1, tuple._2, ListBuffer[String]()))
+    /** Removes and counts all ..s
+     *
+     * @param theLst directory listing
+     * @param acc accumulator for .. count
+     * @return directory listing with ..s removed, and number of ..s
+     */
+    @tailrec
+    def removeAndCountDoubleDots(theLst: List[String], acc: Int): (List[String], Int) = {
+      theLst match {
+        case Nil => (Nil, acc)
+        case hd :: tl => {
+          // Because of doubleDotRegExp, string starts with bunch of leading ..s, ends with not ..s
+          // So we can stop once we no longer find a ..
+          if (hd != "..") {
+            (tl, acc)
+          } else {
+            removeAndCountDoubleDots(tl, acc+1)
+          }
+        }
+      }
+    }
+
+    // Check if we have ..s after some path (aka ..s not leading) as we only support leading ..s
+    val doubleDotRegExp = """^[^.]+([.][.])+.*$""".r
+    if (doubleDotRegExp.findFirstIn(path).isInstanceOf[Some[String]]) {
+      Left(DoubleDotPlacementFailure)
+    }
+
+    // Check if path starts with leading ..s
+    if (path(0) == '.' && path(1) == '.') {
+      // Remove and count the ..s
+      val lstCountTuple = removeAndCountDoubleDots(path.slice(0, path.length).split("/").toList, 0)
+
+      val pathLst = lstCountTuple._1
+      val doubleDotCount = lstCountTuple._2
+      val empty = pathLst.isEmpty
+
+      if (doubleDotCount > myDirStack.length) {
+        // Too many ..s and we return a failure
+        Left(DoubleDotCountFailure)
+      } else {
+        // Otherwise pop the stack for each ..
+        var curDir: MyDir = null
+
+        for (i <- 1 to doubleDotCount) {
+          myDirStack.pop
+        }
+
+        // Peek off stack if myDirStack isn't empty
+        // Else get rootMyDir
+        curDir = if (!myDirStack.isEmpty) myDirStack.peek else rootMyDir
+
+        // Now verify the path
+        verifyDirs(curDir, pathLst, ListBuffer[MyDir](), false)
+      }
+    } else {
+      val tuple = path(0) match {
+        case '/' => {
+          val pathAfterSlash = path.slice(1, path.length)
+
+          if (pathAfterSlash.isEmpty) {
+            // We need to test for pathAfterSlash being empty
+            // because split does something weird to give us a List
+            // with an element of whitespace
+            (rootMyDir, List(), ListBuffer[MyDir](), true)
+          } else {
+            // In this case there's more than just "/"
+            (rootMyDir, path.slice(1, path.length).split("/").toList, ListBuffer[MyDir](), true)
+          }
+        }
+        // If no leading slash we're verifying from the current directory
+        case _ => (curMyDir, path.split("/").toList, ListBuffer[MyDir](), false)
+      }
+
+      // Verify the path
+      verifyDirs(tuple._1, tuple._2, tuple._3, tuple._4)
+    }
   }
 
-  def write(out: java.io.OutputStream, string: String): Unit = {
-    out.write(string.getBytes(StandardCharsets.UTF_8))
-  }
-
-  def writeln(out: java.io.OutputStream, string: String): Unit = {
-    write(out, string + "\n")
-  }
-
-
-  class CdCompleter extends OptionCompleter[CompleterInvocation] {
+  class FileDirCompleter extends OptionCompleter[CompleterInvocation] {
+    /**
+      * Provides all possible completer values given completerInvocation
+      * @param completerInvocation instance that stores completion/completer values
+      *
+      * For some reason the completion doesn't work sometimes but I've tested
+      * and the correct values are being added to completerInvocation
+      */
     override def complete(completerInvocation: CompleterInvocation): Unit = {
-      //val completeVal = Option(completerInvocation.getGivenCompleteValue())
-      val compVal = completerInvocation.getGivenCompleteValue
+      val path: String = completerInvocation.getGivenCompleteValue
 
-      MyDrive.verifyPath(compVal) match {
-        case util.Success(lastTuple) => {
-          val lastDir = lastTuple._1
+      MyDrive.verifyPath(path) match {
+        case Right(lastTuple) => {
+          val lastDirName = lastTuple._1
           val lastMyDir = lastTuple._2
 
-          val possibilities: List[String] = lastMyDir.childDirs.map(_.name).filter(_.startsWith(lastDir)).toList :::
-            lastMyDir.childFiles.map(_.getName).filter(_.startsWith(lastDir))
+          val possibilities: List[String] = lastMyDir.childDirs.map(_.name).filter(_.startsWith(lastDirName)).toList :::
+            lastMyDir.childFiles.map(_.getName).filter(_.startsWith(lastDirName)).toList
 
           completerInvocation.addAllCompleterValues(possibilities.asJavaCollection)
         }
-        case util.Failure(_) => ()
-      }
-    }
-  }
+        case Left(failure) => {
+          failure match {
+            case InvalidPathFailure(_) => ()
+            case DuplicateNameFailure(_) => ()
+            case DoubleDotPlacementFailure => ()
+            case DoubleDotCountFailure => ()
+            case EmptyFollowingPathFailure(dir) => {
+              val possibilities: List[String] = dir.childDirs.map(_.name).toList :::
+                dir.childFiles.map(_.getName).toList
 
-  class DirectoryPathValidator extends OptionValidator[DirectoryPathInvocation] {
-    override def validate(validatorInvocation: DirectoryPathInvocation): Unit = {
-      val tryRes = verifyPath(validatorInvocation.getValue)
-
-      tryRes match {
-        case Success(tuple) => {
-          val lastDir = tuple._1
-          val lastMyDir = tuple._2
-
-          // TODO: Deal with multiple directories with same name
-          val childDirsFound = lastMyDir.childDirs.map(_.name).filter(_.equals(lastDir))
-
-          if (childDirsFound.length != 1)
-            throw new OptionValidatorException("Directory path validation failed.")
+              completerInvocation.addAllCompleterValues(possibilities.asJavaCollection)
+            }
+          }
         }
-        case Failure(_) => throw new OptionValidatorException("Directory path validation failed.")
       }
     }
   }
-
-  class DirectoryPathInvocation(val path: String, val command: Command[CommandInvocation], val aeshContext: AeshContext)
-    extends ValidatorInvocation[String, Command[CommandInvocation]] {
-    override def getCommand: Command[CommandInvocation] = command
-
-    override def getValue: String = path
-
-    override def getAeshContext: AeshContext = aeshContext
-  }
-
-  class ExampleValidatorInvocationProvider extends ValidatorInvocationProvider[ValidatorInvocation[String, Command[CommandInvocation]]] {
-    override def enhanceValidatorInvocation(validatorInvocation: ValidatorInvocation[_, _]): ValidatorInvocation[String, Command[CommandInvocation]] = {
-      if (validatorInvocation.getValue.isInstanceOf[String])
-        new DirectoryPathInvocation(validatorInvocation.getValue.asInstanceOf[String],
-          validatorInvocation.getCommand.asInstanceOf[Command[CommandInvocation]], validatorInvocation.getAeshContext)
-      else
-        validatorInvocation.asInstanceOf[ValidatorInvocation[String, Command[CommandInvocation]]]
-    }
-  }
-
 
   @CommandDefinition(name="exit", description = "exit the program")
   object ExitCommand extends Command[CommandInvocation] {
@@ -316,6 +210,7 @@ object MyDrive {
     }
   }
 
+  // Dummy Command
   @CommandDefinition(name="foo", description = "fooing")
   object FooCommand extends Command[CommandInvocation] {
 
@@ -324,17 +219,22 @@ object MyDrive {
     @cl.Option(shortName = 'f', hasValue = false, description = "set foo to true/false")
     var foo: String = "foo"
 
+    @Arguments()
+    val arguments: java.util.List[String] = null
+
     override def execute(commandInvocation: CommandInvocation): CommandResult = {
       val out = commandInvocation.getShell.out()
 
-      if (bar == null)
-        writeln(out, "NO BAR!")
+      if (bar == null) {
+        println("NO BAR!")
+        val width = commandInvocation.getShell.getSize.getWidth
+        val entriesMaxLength = curMyDir.lsEntries.map(_.gfile.getName.length).max
+        val entriesPerLine = Math.floor(commandInvocation.getShell.getSize.getWidth.toDouble / (entriesMaxLength+2).toDouble).toInt
+        println(s"width: $width, entriesMaxLength: $entriesMaxLength, entriesPerLine: $entriesPerLine")
+      }
       else {
-        writeln(out, "You set bar to: " + bar)
-        writeln(out, "Let's work a bit......")
-        println("Test")
-        println(commandInvocation.getShell.getSize.getWidth.toString)
-        println(averageWordLength.get())
+        println("You set bar to: " + bar)
+        println("Let's work a bit......")
         Thread.sleep(2000)
       }
 
@@ -342,104 +242,449 @@ object MyDrive {
     }
   }
 
-  @CommandDefinition(name="ls", description = "list dirs")
-  object LsCommand extends Command[CommandInvocation] {
+  @CommandDefinition(name="forceUpdate", description = "force update of state")
+  object ForceUpdateCommand extends Command[CommandInvocation] {
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
+
     override def execute(commandInvocation: CommandInvocation): CommandResult = {
-      val entriesPerLine = Math.floor(commandInvocation.getShell.getSize.getWidth.toDouble / averageWordLength.get().toDouble).toInt - 1
-      /*
-      println(commandInvocation.getShell.getSize.getWidth.toDouble)
-      println(commandInvocation.getShell.getSize.getWidth.toDouble / averageWordLength.get().toDouble)
-      println((commandInvocation.getShell.getSize.getWidth.toDouble / averageWordLength.get().toDouble).toInt)
-      println((commandInvocation.getShell.getSize.getWidth.toDouble / averageWordLength.get().toDouble).toInt - 1)
-      */
-
-      // TODO: Format it so it looks better
-      if (entriesPerLine < 2) {
-        curMyDir.get().childDirs.map(_.name).foreach(entry => { colorPrinter.print(entry + "\n", Attribute.BOLD, FColor.BLUE, BColor.BLACK) })
-        colorPrinter.clear()
-        curMyDir.get().childFiles.map(_.getName).foreach(println(_))
-      } else {
-        curMyDir.get().childDirs.map(_.name).grouped(entriesPerLine).foreach(group => {
-          group.foreach(entry => { colorPrinter.print(entry + "  ", Attribute.BOLD, FColor.BLUE, BColor.BLACK) })
-          println()
-        })
-
-        colorPrinter.clear()
-
-        curMyDir.get().childFiles.map(_.getName).grouped(entriesPerLine).foreach(group => {
-          group.foreach(entry => { print(entry + "  ") })
-        })
+      if (help) {
+        println(commandInvocation.getHelpInfo("ls"));
+        CommandResult.FAILURE
       }
 
+      totalFileList = MyDriveService.populateTotalFileList(service)
+      rootDirGFile = service.files().get("root").execute()
+      rootMyDir = MyDriveService.getDirectoryStructure(totalFileList, rootDirGFile)
+      curMyDir = rootMyDir
+
+      commandInvocation.setPrompt(new Prompt("/> "))
       CommandResult.SUCCESS
+    }
+  }
+
+  object NameOrdering extends Ordering[LsEntry] {
+    override def compare(x: LsEntry, y: LsEntry): Int = x.name.compareTo(y.name)
+  }
+
+  object SizeOrdering extends Ordering[LsEntry] {
+    override def compare(x: LsEntry, y: LsEntry): Int = x.gfile.getSize.compareTo(y.gfile.getSize)
+  }
+
+  // TODO: Fix time ordering
+  object TimeOrdering extends Ordering[LsEntry] {
+    override def compare(x: LsEntry, y: LsEntry): Int = {
+      //x.gfile.getModifiedTime.value.compareTo(y.gfile.getModifiedTime.value)
+      x.gfile.getModifiedTime.toString.compareTo(y.gfile.getModifiedTime.toString)
+      /*
+      val xTime = x.gfile.getModifiedTime.value
+      val yTime = y.gfile.getModifiedTime.value
+      xTime.compareTo(yTime)
+      */
+    }
+  }
+
+  object ExtensionOrdering extends Ordering[LsEntry] {
+    override def compare(x: LsEntry, y: LsEntry): Int = {
+      val xDotIdx = x.name.indexOf('.')
+      val yDotIdx = y.name.indexOf('.')
+
+      if (xDotIdx == -1) {
+        // Both files don't have extensions, so compare them
+        if (yDotIdx == -1) x.name.compareTo(y.name)
+        // x doesn't have extension, but y does
+        else -1
+      } else {
+        val xExt = x.name.slice(xDotIdx+1, x.name.length)
+        val yExt = y.name.slice(yDotIdx+1, y.name.length)
+
+        // x has extension, y doesn't, so -1
+        if (yDotIdx == -1) 1
+        else {
+          val compareVal = xExt.compareTo(yExt)
+
+          // Extensions are same so compare them
+          if (compareVal == 0) x.name.compareTo(y.name)
+          // Else just go with the extension comparison
+          else compareVal
+        }
+      }
+    }
+  }
+
+  @CommandDefinition(name="ls", description = "list dirs")
+  object LsCommand extends Command[CommandInvocation] {
+    @cl.Option(shortName = 's', name = "sort", description = "sort by", defaultValue = Array("name"))
+    private var sortBy: String = ""
+
+    @cl.Option(shortName = 'i', name = "show-id", description = "show ids", hasValue = false)
+    private var showId: Boolean = false
+
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
+
+    @cl.Option(shortName = 'd', hasValue = false, description = "list directories themselves, not their contents")
+    private var listDirectory: Boolean = false
+
+    @Arguments(completer = classOf[FileDirCompleter])
+    private var arguments: java.util.List[String] = null
+
+    /**
+      * Prints out the listing for a certain directory
+      *
+      * @param commandInvocation
+      * @param myDir certain directory
+      */
+    private def lsDirHelper(commandInvocation: CommandInvocation, myDir: MyDir): Unit = {
+      if (!myDir.lsEntries.isEmpty) {
+        val maxEntryLength = if (showId) {
+          println("HELLO")
+          myDir.lsEntries.map(_.gfile.getName.length).max + myDir.lsEntries.map(_.gfile.getId.length).max + 3
+        } else {
+          myDir.lsEntries.map(_.gfile.getName.length).max
+        }
+        val maxEntriesPerLine = Math.floor(commandInvocation.getShell.getSize.getWidth.toDouble / (maxEntryLength + 2).toDouble).toInt
+
+        // Sort entries
+        val sortedLsEntries = sortBy match {
+          case "name" => myDir.lsEntries.sorted(NameOrdering)
+          case "size" => myDir.lsEntries.sorted(SizeOrdering)
+          case "time" => myDir.lsEntries.sorted(TimeOrdering)
+          case "extension" => myDir.lsEntries.sorted(ExtensionOrdering)
+        }
+
+        if (maxEntriesPerLine < 2) {
+          //
+
+          /*
+           * If the width too short or line length too long, just iterate over sortedLsEntries
+           * Print in blue if directory, else just normal color
+           * Add newline at end of each iteration
+           */
+          sortedLsEntries.foreach(entry => {
+            val entryName = if (showId) entry.gfile.getName + " (" + entry.gfile.getId + ")" else entry.gfile.getName
+            if (entry.isDir) {
+              colorPrinter.print(entryName, Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+              colorPrinter.clear()
+            } else {
+              print(entryName)
+            }
+            println()
+          })
+        } else {
+          /*
+           * Else if width not too short and line length not too long
+           * Group list of entries into sublists based on maxEntryPerLine
+           * Iterate over sublists
+           * Format the string for entry based on maxEntryLength (aka pad with spaces)
+           * Print in blue if directory, else just normal color
+           * Add newline at end of sublist iteration
+           */
+          val groupedEntries = sortedLsEntries.grouped(maxEntriesPerLine)
+          groupedEntries.foreach(group => {
+            group.foreach(entry => {
+              val formatstr = "%-" + (maxEntryLength + 2) + "s"
+              val entryName = if (showId) entry.gfile.getName + " (" + entry.gfile.getId + ")" else entry.gfile.getName
+              val formattedEntryName = String.format(formatstr, entryName)
+              if (entry.isDir) {
+                colorPrinter.print(formattedEntryName, Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                colorPrinter.clear()
+              } else {
+                print(formattedEntryName)
+              }
+            })
+            println()
+          })
+        }
+      }
+    }
+
+    override def execute(commandInvocation: CommandInvocation): CommandResult = {
+      val results = new ListBuffer[CommandResult]()
+      val argOpts = Option(arguments.asScala)
+
+      if (help) {
+        println(commandInvocation.getHelpInfo("ls"));
+        CommandResult.FAILURE
+      }
+
+      argOpts match {
+        // If we have arguments
+        case Some(pathLst) => {
+          // For each path in the list of paths
+          pathLst.foreach(givenUserPath => {
+            val path = if (givenUserPath.endsWith("/")) givenUserPath else givenUserPath + "/"
+            // Verify the path
+            verifyPath(givenUserPath) match {
+              case Right((lastDirFileName, lastMyDir, _, _)) => {
+                if (lastDirFileName.contains('*')) {
+                  // Replace all with "*"s with ".*"s
+                  val regExpStr = "^" + lastDirFileName.replaceAll("\\*", ".*") + "$"
+                  val regExp = regExpStr.r
+
+                  // Since bash's ls separates them, I decided to separate them as well
+                  val childDirsFound = lastMyDir.childDirs.filter(childDir => { regExp.findFirstIn(childDir.name) != None })
+                  val childFilesFound = lastMyDir.childFiles.filter(childFile => { regExp.findFirstIn(childFile.getName) != None })
+
+                  childFilesFound.foreach(childFile => {
+                    val output = if (showId) childFile.getName + " (" + childFile.getId + ")" else childFile.getName
+                    println(output)
+                  })
+
+                  childDirsFound.foreach(childDir => {
+                    if (listDirectory) {
+                      colorPrinter.print(s"${childDir.getName}", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                      colorPrinter.clear()
+                    } else {
+                      colorPrinter.print(s"${childDir.getName}:", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                      colorPrinter.clear()
+                      lsDirHelper(commandInvocation, childDir)
+                    }
+                    println()
+                  })
+                  println()
+                  CommandResult.SUCCESS
+                } else {
+                  // Look for any child dirs or files that match lastDirFileName
+                  val childDirsFound = lastMyDir.childDirs.filter(_.name.equals(lastDirFileName))
+                  val childFilesFound = lastMyDir.childFiles.filter(_.getName.equals(lastDirFileName))
+
+                  if (childDirsFound.isEmpty && childFilesFound.isEmpty) {
+                    println("No such last mile directory or file " + lastDirFileName)
+                    results += CommandResult.FAILURE
+                  } else if (childDirsFound.length > 1) {
+                    println("Multiple matches found for last mile directory " + lastDirFileName +
+                      ". Please cd to the directory before it and use cdId command.")
+                    results += CommandResult.FAILURE
+                  } else {
+                    if (!childDirsFound.isEmpty) {
+                      if (listDirectory) {
+                        colorPrinter.print(s"$path", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                        colorPrinter.clear()
+                      } else {
+                        colorPrinter.print(s"$path:", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                        colorPrinter.clear()
+                        println()
+                        lsDirHelper(commandInvocation, childDirsFound.head)
+                      }
+                      println("\n")
+                      results += CommandResult.SUCCESS
+                    } else {
+                      // We found a file so just print out the filename
+                      val output = if (showId) childFilesFound.head.getName + " (" + childFilesFound.head.getId + ")" else childFilesFound.head.getName
+                      println(output)
+                      println("\n")
+                      results += CommandResult.SUCCESS
+                    }
+                  }
+                }
+              }
+              case Left(failure) => {
+                failure match {
+                  case InvalidPathFailure(dirName) => {
+                    println("No such directory " + dirName)
+                    results += CommandResult.FAILURE
+                  }
+                  case DuplicateNameFailure(dirName) => {
+                    println("Multiple directories with name " + dirName)
+                    results += CommandResult.FAILURE
+                  }
+                  case DoubleDotPlacementFailure => {
+                    println("Only leading ..s are supported")
+                    results += CommandResult.FAILURE
+                  }
+                  case DoubleDotCountFailure => {
+                    println("Too many ..s")
+                    results += CommandResult.FAILURE
+                  }
+                  case EmptyFollowingPathFailure(dir) => {
+                    if (listDirectory) {
+                      colorPrinter.print(s"$path", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                      colorPrinter.clear()
+                    } else {
+                      colorPrinter.print(s"$path:", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                      colorPrinter.clear()
+                      println()
+                      lsDirHelper(commandInvocation, dir)
+                    }
+                    println("\n")
+                    results += CommandResult.SUCCESS
+                  }
+                }
+              }
+            }
+          })
+        }
+        case None => {
+          lsDirHelper(commandInvocation, curMyDir)
+          CommandResult.SUCCESS
+        }
+      }
+
+      if (results.contains(CommandResult.FAILURE)) {
+        CommandResult.FAILURE
+      } else {
+        CommandResult.SUCCESS
+      }
     }
   }
 
 
   @CommandDefinition(name="cd", description="changes directory")
   object CdCommand extends Command[CommandInvocation] {
-    //@Arguments(completer = classOf[CdCompleter], validator = classOf[DirectoryPathValidator])
-    @Arguments(completer = classOf[CdCompleter])
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
+
+    @Arguments(completer = classOf[FileDirCompleter])
     var arguments: java.util.List[String] = new java.util.LinkedList[String]()
 
     @Override
     override def execute(commandInvocation: CommandInvocation): CommandResult = {
       val argsOpt = Option(arguments.asScala)
 
-      //argsOpt.map(_.foreach(println))
+      if (help) {
+        println(commandInvocation.getHelpInfo("ls"));
+        CommandResult.SUCCESS
+      }
 
       argsOpt match {
         case Some(lst) => {
           if (lst.length != 1) {
-            write(commandInvocation.getShell.out(), "This command does not take multiple arguments")
+            println("cd: takes 1 argument")
             CommandResult.FAILURE
           } else {
-            // TODO: Add checking for .. with a synchronized Stack
-            if (lst.head == "/") {
-              curMyDir.set(rootMyDir.get())
-              commandInvocation.setPrompt(new Prompt("/> "))
+            // Make sure the path is correct via verifyPath
+            verifyPath(lst.head) match {
+              case Right((lastDirName, lastMyDir, dirList, leadingSlash)) => {
+                val childDirsFound = lastMyDir.childDirs.filter(_.name.equals(lastDirName))
 
-              CommandResult.SUCCESS
-            } else {
-              val tryRes = verifyPath(lst.head)
-
-              tryRes match {
-                case Success(tuple) => {
-                  val lastDir = tuple._1
-                  val lastMyDir = tuple._2
-                  val dirList = tuple._3
-
-                  // TODO: Deal with multiple directories with same name
-                  val childDirsFound = lastMyDir.childDirs.filter(_.name.equals(lastDir))
-
-                  val myDir = childDirsFound.head
-                  curMyDir.set(myDir)
-
-                  val dirListStr = StringBuilder.newBuilder
-
-                  dirList.foreach(dir => {
-                    dirListStr.append(dir)
-                    dirListStr.append("/")
-                  })
-
-                  val curPromptDirStr = commandInvocation.getPrompt.getPromptAsString.dropRight(2)
-
-                  val newPromptDirStr =
-                    if (lst.head(0) != '/') curPromptDirStr + dirListStr.toString() + lastDir + "/> "
-                    else dirListStr.toString() + lastDir + "/> "
-
-                  commandInvocation.setPrompt(new Prompt(newPromptDirStr))
-                  CommandResult.SUCCESS
-                }
-                case Failure(_) => {
-                  write(commandInvocation.getShell.out(), "This command does not take multiple arguments")
+                if (childDirsFound.isEmpty) {
+                  // Return FAILURE if the last mile directory
+                  // isn't found
+                  println("No such last mile directory " + lastDirName)
                   CommandResult.FAILURE
+                } else {
+                  if (childDirsFound.length > 1) {
+                    // Return FAILURE if multiple directories of
+                    // the same name
+                    println("Multiple matches found for last mile directory " + lastDirName +
+                      ". Please cd to the directory before it and use cdId command.")
+                    CommandResult.FAILURE
+                  } else {
+                    val myDir = childDirsFound.head
+
+                    val dirListStr = StringBuilder.newBuilder
+                    // If there's a leading slash, clear stack,
+                    // iterate through directory list, add each to stack,
+                    // and add lastMyDir (assuming none are rootMyDir)
+                    if (leadingSlash) {
+                      myDirStack.clear
+
+                      dirList.foreach(dir => {
+                        if (!dir.eq(rootMyDir)) {
+                          myDirStack.push(dir)
+                          dirListStr.append(dir.getName)
+                          dirListStr.append("/")
+                        }
+                      })
+
+                      if (!lastMyDir.eq(rootMyDir)) {
+                        myDirStack.push(lastMyDir)
+                        dirListStr.append(lastMyDir.getName)
+                        dirListStr.append("/")
+                      }
+
+                      myDirStack.push(myDir)
+                    // If no leading slash (aka cd from current dir)
+                    } else {
+                      // Determine if the directory list has curMyDir in it
+                      // If so, slice dirList after it, iterate and add
+                      // each MyDir to stack, then add lastMyDir to stack
+                      if (dirList.exists(_.eq(curMyDir))) {
+                        val firstOccurIdx = dirList.indexOf(curMyDir)
+                        val slicedLst = dirList.slice(firstOccurIdx+1, dirList.length)
+
+                        slicedLst.foreach(dir => {
+                          myDirStack.push(dir)
+                          dirListStr.append(dir.getName)
+                          dirListStr.append("/")
+                        })
+                        myDirStack.push(lastMyDir)
+                        dirListStr.append(lastMyDir.getName)
+                        dirListStr.append("/")
+                      }
+                      // If the directory list doesn't have curMyDir in it
+                      // That means dirList is empty and lastMyDir is curMyDir
+                      // so do nothing
+
+                      // Either way push myDir which is the last mile directory to cd to
+                      myDirStack.push(myDir)
+                    }
+
+                    // Get prompt, drop the "> " from it
+                    val curPromptDirStr = commandInvocation.getPrompt.getPromptAsString.dropRight(2)
+                    // If we're changing directory from the current directory,
+                    // use the current Prompt as a base for the new Prompt
+                    // Otherwise just use the built dirListStr
+                    val newPromptDirStr =
+                      if (lst.head(0) != '/') curPromptDirStr + dirListStr.toString() + lastDirName + "/> "
+                      else "/" + dirListStr.toString() + lastDirName + "/> "
+
+                    commandInvocation.setPrompt(new Prompt(newPromptDirStr))
+
+                    // Update curMyDir since we changed directory
+                    curMyDir = myDir
+
+                    CommandResult.SUCCESS
+                  }
+                }
+              }
+              case Left(failure) => {
+                failure match {
+                  case InvalidPathFailure(dirName) => {
+                    println("No such directory " + dirName)
+                    CommandResult.FAILURE
+                  }
+                  case DuplicateNameFailure(dirName) => {
+                    println("Multiple directories with name " + dirName)
+                    CommandResult.FAILURE
+                  }
+                  case DoubleDotPlacementFailure => {
+                    println("Only leading ..s are supported")
+                    CommandResult.FAILURE
+                  }
+                  case DoubleDotCountFailure => {
+                    println("Too many ..s")
+                    CommandResult.FAILURE
+                  }
+                  case EmptyFollowingPathFailure(dir) => {
+                    if (dir.eq(rootMyDir)) {
+                      commandInvocation.setPrompt(new Prompt("/> "))
+                      curMyDir = rootMyDir
+                    } else {
+                      // If dir isn't the root dir then this has to be from just ..s
+                      // Reverse the stack and iterate to get new prompt
+                      val dirListStr = StringBuilder.newBuilder
+                      val dirList = myDirStack.getBackedList.reverse
+                      dirList.foreach(dir => {
+                        dirListStr.append(dir.getName)
+                        dirListStr.append("/")
+                      })
+
+                      val newPromptDirStr = "/" + dirListStr.toString() + "> "
+
+                      commandInvocation.setPrompt(new Prompt(newPromptDirStr))
+                      curMyDir = dir
+                    }
+                    CommandResult.SUCCESS
+                  }
                 }
               }
             }
           }
         }
         case None => {
+          println("cd: requires an argument")
           CommandResult.FAILURE
         }
       }
@@ -447,14 +692,6 @@ object MyDrive {
   }
 
   def main(args: Array[String]): Unit = {
-    val service = getDriveService
-
-    populateTotalFileList(service)
-    rootMyDir.set(getDirectoryStructure)
-    curMyDir.set(rootMyDir.get)
-
-    //println(rootMyDir)
-
     val settings = new SettingsBuilder().logging(true).create()
 
     val consoleBuilder = new AeshConsoleBuilder().settings(settings)
