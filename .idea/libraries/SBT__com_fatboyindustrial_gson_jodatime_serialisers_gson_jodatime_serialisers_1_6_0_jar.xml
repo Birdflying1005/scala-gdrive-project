@@ -1,0 +1,11 @@
+<component name="libraryTable">
+  <library name="SBT: com.fatboyindustrial.gson-jodatime-serialisers:gson-jodatime-serialisers:1.6.0:jar">
+    <CLASSES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.fatboyindustrial.gson-jodatime-serialisers/gson-jodatime-serialisers/jars/gson-jodatime-serialisers-1.6.0.jar!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES>
+      <root url="jar:///mnt/lin/fma1/homestorage/.ivy2/cache/com.fatboyindustrial.gson-jodatime-serialisers/gson-jodatime-serialisers/srcs/gson-jodatime-serialisers-1.6.0-sources.jar!/" />
+    </SOURCES>
+  </library>
+</component>
