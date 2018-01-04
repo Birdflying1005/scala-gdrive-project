@@ -33,6 +33,7 @@ case class GsonGFileAdapter() extends JsonDeserializer[GFile] {
     gfile.setFullFileExtension(Option(jsonObj.get("fullFileExtension")).map(_.getAsString).getOrElse(null))
     gfile.setFileExtension(Option(jsonObj.get("fileExtension")).map(_.getAsString).getOrElse(null))
     gfile.setStarred(Option(jsonObj.get("starred")).map(_.getAsBoolean).getOrElse(false) : Boolean)
+    //gfile.setOwnedByMe(Option(jsonObj.get("ownedByMe")).map(_.getAsBoolean).getOrElse(true) : Boolean)
     gfile.setPermissions(Option(jsonObj.get("permissions")).map(elem => {
       val jsonArray: JsonArray = elem.getAsJsonArray
       val jsonElems: Iterator[JsonElement] = asScalaIterator(jsonArray.iterator())

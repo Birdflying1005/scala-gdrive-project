@@ -12,8 +12,9 @@ case class GsonMyDirAdapter() extends JsonDeserializer[MyDir] {
     val jsonObj = json.getAsJsonObject
     val gfileType = new TypeToken[GFile]() {}.getType()
 
-    val name = Option(jsonObj.get("name")).map(_.getAsString).getOrElse(null)
-    val id = Option(jsonObj.get("id")).map(_.getAsString).getOrElse(null)
+    val gfile = Option(jsonObj.get("gfile")).map(elem => context.deserialize(elem, gfileType)).getOrElse(null)
+
+    val isRootDir = Option(jsonObj.get("isRootDir")).map(_.getAsBoolean).getOrElse(false) : Boolean
 
     val childDirs = Option(jsonObj.get("childDirs")).map(elem => {
       val jsonArray: JsonArray = elem.getAsJsonArray
@@ -39,25 +40,11 @@ case class GsonMyDirAdapter() extends JsonDeserializer[MyDir] {
       lstBuf
     }).getOrElse(null)
 
-    val lsEntries = Option(jsonObj.get("childFiles")).map(elem => {
-      val jsonArray: JsonArray = elem.getAsJsonArray
-      val jsonElems: Iterator[JsonElement] = asScalaIterator(jsonArray.iterator())
-      val lstBuf: ListBuffer[LsEntry] = ListBuffer[LsEntry]()
+    val myDirChildFiles = new ListBuffer[GFile]()
+    myDirChildFiles ++= childFiles
 
-      for (elem <- jsonElems) {
-        val jsonObj = elem.getAsJsonObject
-
-        val isDir: Boolean = Option(jsonObj.get("isDir")).map(_.getAsBoolean).getOrElse(false) : Boolean
-        val name: String = Option(jsonObj.get("name")).map(_.getAsString).getOrElse(null)
-        val gfile: GFile = Option(jsonObj.get("gfile")).map(elem => context.deserialize(elem, gfileType)).getOrElse(null)
-      }
-
-      lstBuf
-    }).getOrElse(null)
-
-    val myDir = new MyDir(name, id, childFiles)
+    val myDir = new MyDir(gfile, myDirChildFiles, isRootDir)
     myDir.childDirs ++= childDirs
-    myDir.lsEntries ++= lsEntries
 
     myDir
   }

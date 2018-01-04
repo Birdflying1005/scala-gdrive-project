@@ -1,3 +1,8 @@
+import scala.annotation.tailrec
+import scala.collection.mutable.ListBuffer
+import scala.collection.mutable.Queue
+import scala.collection.JavaConverters._
+
 import com.google.api.client.auth.oauth2.Credential
 import com.google.api.client.extensions.java6.auth.oauth2.AuthorizationCodeInstalledApp
 import com.google.api.client.extensions.jetty.auth.oauth2.LocalServerReceiver
@@ -9,12 +14,6 @@ import com.google.api.services.drive.{Drive, DriveScopes}
 import com.google.api.services.drive.model.{File => GFile}
 import com.google.api.client.http.HttpRequestInitializer
 
-import scala.collection.JavaConverters._
-import scala.collection.mutable.ListBuffer
-import scala.collection.mutable.Queue
-
-import scala.annotation.tailrec
-
 object MyDriveService {
   private val APPLICATION_NAME = "scala-gdrive-project"
   private val DATA_STORE_DIR = System.getProperty("user.home") + "/.credentials/scala-gdrive-project"
@@ -25,12 +24,13 @@ object MyDriveService {
   private val SCOPES = List[String](DriveScopes.DRIVE).asJava
   private var PRINT = true
 
-  /** Creates a new HttpRequestInitializer that takes an old HttpRequestInitializer
-    * and extends the read and connect timeouts of every request
-    *
-    * @param requestInitializer old HttpRequestInitializer
-    * @return a new HttpRequestInitializer with extended timeouts
-    */
+  /**
+   * Creates a new HttpRequestInitializer that takes an old HttpRequestInitializer
+   * and extends the read and connect timeouts of every request
+   *
+   * @param requestInitializer old HttpRequestInitializer
+   * @return a new HttpRequestInitializer with extended timeouts
+   */
   def setHttpTimeout(requestInitializer: HttpRequestInitializer): HttpRequestInitializer = {
     // Single Abstract Method
     (request: com.google.api.client.http.HttpRequest) => {
@@ -40,10 +40,11 @@ object MyDriveService {
     }
   }
 
-  /** Authorizes application to use user data via OAuth2 and user's credentials
-    *
-    * @return a new Credential instance based on credentials in client_id.json
-    */
+  /**
+   * Authorizes application to use user data via OAuth2 and user's credentials
+   *
+   * @return a new Credential instance based on credentials in client_id.json
+   */
   def authorize: Credential = {
     val clientSecrets = GoogleClientSecrets.load(JSON_FACTORY,
       new java.io.InputStreamReader(new java.io.FileInputStream(DATA_STORE_DIR + "/client_id.json")))
@@ -55,10 +56,11 @@ object MyDriveService {
     new AuthorizationCodeInstalledApp(flow, new LocalServerReceiver).authorize("user")
   }
 
-  /** Builds an instance of Drive based on authorization credentials
-    *
-    * @return a new instance of Drive based on credentials
-    */
+  /**
+   * Builds an instance of Drive based on authorization credentials
+   *
+   * @return a new instance of Drive based on credentials
+   */
   def getDriveService: com.google.api.services.drive.Drive = {
     new Drive.Builder(
       HTTP_TRANSPORT, JSON_FACTORY, setHttpTimeout(authorize))
@@ -66,10 +68,11 @@ object MyDriveService {
       .build()
   }
 
-  /** Takes in a Drive instance and returns complete list of files
+  /**
+   * Takes in a Drive instance and returns complete list of files
    *
-   *  @param service Drive instance
-   *  @return a list of GFiles
+   * @param service Drive instance
+   * @return a list of GFiles
    */
   def populateTotalFileList(service: com.google.api.services.drive.Drive) = {
     val totalList = ListBuffer[GFile]()
@@ -104,31 +107,30 @@ object MyDriveService {
 
   /**
     * Takes in the complete list of files and returns the root MyDir
-    * @param totalFileList complete list of files
+    *
+    * @param files complete list of files
     * @param rootDirGFile GFile instance of root directory
     * @return root MyDir
     */
-  def getDirectoryStructure(totalFileList: ListBuffer[GFile], rootDirGFile: GFile): MyDir = {
+  def getDirectoryStructure(files: ListBuffer[GFile], rootDirGFile: GFile): (MyDir, scala.collection.mutable.Map[String, MyDir]) = {
     if (PRINT) {
       println("Creating directory structure...")
     }
 
-    val files = totalFileList
     val rootDirId = rootDirGFile.getId
 
     val dirGFileById = scala.collection.mutable.Map[String, GFile]()
     val childDirIdsById = scala.collection.mutable.Map[String, ListBuffer[String]]()
     val childGFilesById = scala.collection.mutable.Map[String, ListBuffer[GFile]]()
 
-    val lsEntryById = scala.collection.mutable.Map[String, LsEntry]()
-
     dirGFileById += rootDirId -> rootDirGFile
 
+    // TODO: Parallelization
+    
     // Add each directory to map such that (Directory ID -> GFile)
     // Add each directory to the list of directory for its parent
     files.filter(_.getMimeType == "application/vnd.google-apps.folder").foreach(file => {
       dirGFileById += (file.getId -> file)
-      lsEntryById += file.getId -> new LsEntry(true, file.getName, file)
       // Option[java.util.List[String]] -> java.util.List[String] -> List[String]
       Option(file.getParents).foreach(_.asScala.foreach(parent => {
           if (!childDirIdsById.contains(parent)) childDirIdsById += (parent -> new ListBuffer[String]())
@@ -139,7 +141,6 @@ object MyDriveService {
 
     // Add each file (file ID) to the list of files (GFiles) for its parent
     files.filterNot(_.getMimeType == "application/vnd.google-apps.folder").foreach(file => {
-      lsEntryById += file.getId -> new LsEntry(false, file.getId, file)
       // Option[java.util.List[String]] -> java.util.List[String] -> List[String]
       Option(file.getParents).foreach(_.asScala.foreach(parent => {
         if (!childGFilesById.contains(parent)) childGFilesById += (parent -> new ListBuffer[GFile]())
@@ -152,7 +153,7 @@ object MyDriveService {
     val myDirById = scala.collection.mutable.Map[String, MyDir]()
 
     val rootChildDirIds = childDirIdsById(rootDirId)
-    val rootMyDir = new MyDir("/", rootDirId, childGFilesById(rootDirId))
+    val rootMyDir = new MyDir(rootDirGFile, util.Try(childGFilesById(rootDirId)).getOrElse(ListBuffer[GFile]()), true)
 
     // Add root directory to queue as starting point
     myDirById += (rootDirId -> rootMyDir)
@@ -174,7 +175,7 @@ object MyDriveService {
       val gfile = dirGFileById(dirId)
 
       // Create new MyDir & add it to map such that (dirId -> MyDir)
-      val newMyDir = new MyDir(gfile.getName, dirId, util.Try(childGFilesById(dirId)).getOrElse(ListBuffer()))
+      val newMyDir = new MyDir(gfile, util.Try(childGFilesById(dirId)).getOrElse(ListBuffer[GFile]()), false)
       myDirById += dirId -> newMyDir
 
       // Add children dirs to dirIdQueue
@@ -186,24 +187,23 @@ object MyDriveService {
     // Option[java.util.List[String]] -> java.util.List[String] -> List[String]
     dirIdsNotRoot.foreach(dirId => Option(dirGFileById(dirId).getParents).foreach(_.asScala.foreach(parent => myDirById(parent).childDirs += myDirById(dirId))))
 
-    // Populate lsEntries for each MyDir
-    myDirById.values.foreach(myDir => {
-      val childDirEntries: ListBuffer[LsEntry] = myDir.childDirs.map(childDir => { lsEntryById(childDir.id) })
-      val childFileEntries: ListBuffer[LsEntry] = myDir.childFiles.map(childFile => { lsEntryById(childFile.getId) })
-
-      myDir.lsEntries ++= childDirEntries
-      myDir.lsEntries ++= childFileEntries
-    })
-
-    rootMyDir
+    (rootMyDir, myDirById)
   }
 
   sealed trait VerifyPathFailure
-  final object DoubleDotPlacementFailure extends VerifyPathFailure
-  final object DoubleDotCountFailure extends VerifyPathFailure
-  final case class InvalidPathFailure(val dirName: String) extends VerifyPathFailure
+  final class DoubleDotPlacementFailure extends VerifyPathFailure {
+    override def toString: String = "Only leading ..s are supported"
+  }
+  final class DoubleDotCountFailure extends VerifyPathFailure {
+    override def toString: String = "Too many ..s"
+  }
+  final case class InvalidPathFailure(val dirName: String) extends VerifyPathFailure {
+    override def toString: String = "No such directory " + dirName
+  }
   final case class EmptyFollowingPathFailure(val curDir: MyDir) extends VerifyPathFailure
-  final case class DuplicateNameFailure(val dirName: String) extends VerifyPathFailure
+  final case class DuplicateNameFailure(val dirName: String) extends VerifyPathFailure {
+    override def toString: String = "Multiple directories with directory name " + dirName
+  }
 
   /** Verifies that a path is correct up to second-to-last directory
    *  (with last dir/file not being checked)
@@ -279,7 +279,7 @@ object MyDriveService {
     if (idxNotDoubleDot != -1 && pathSplit.indexWhere(_ == "..", idxNotDoubleDot) != -1) {
       // If we find a .. after finding something that's not ..
       // we return a failure
-      Left(DoubleDotPlacementFailure)
+      Left(new DoubleDotPlacementFailure())
     } else {
       // Check if path starts with leading ..s
       if (path.length == 2 && path(0) == '.' && path(1) == '.' ||
@@ -292,7 +292,7 @@ object MyDriveService {
 
         if (doubleDotCount > myDirStack.length) {
           // Too many ..s and we return a failure
-          Left(DoubleDotCountFailure)
+          Left(new DoubleDotCountFailure())
         } else {
           // Otherwise pop the stack for each ..
           var curDir: MyDir = null
@@ -321,4 +321,90 @@ object MyDriveService {
     }
   }
 
+  /**
+   * Verifies a file exists and returns Some(GFile) or None
+   *
+   * @param filepath path to file
+   * @return Some(GFile) or None
+   */
+  /*
+  def verifyFile(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, filepath: String): Option[GFile] = {
+    verifyPath(rootMyDir, curMyDir, myDirStack, filepath) match {
+      case Right((lastFileName, lastMyDir, _, _)) =>
+        val fileList = lastMyDir.childFiles.filter(_.getName == lastFileName)
+        if (!fileList.isEmpty) Some(fileList.head) else None
+      case Left(_) => None
+    }
+  }
+  */
+
+  /**
+   * Verifies a directory exists and returns Some(MyDir) or None
+   *
+   * @param dirpath path to dir 
+   * @return Some(MyDir) or None
+   */
+  def verifyDirectory(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, dirpath: String): Option[(MyDir, Option[MyDir], List[MyDir])] = {
+    verifyPath(rootMyDir, curMyDir, myDirStack, dirpath) match {
+      case Right((lastDirName, lastMyDir, dirLst, _)) =>
+        val dirMatches = lastMyDir.childDirs.filter(_.name == lastDirName)
+        // We need to check length here because there can be 2 same name directories
+        // And verifyPath doesn't check the last mile directory
+        if (dirMatches.length == 1) Some((dirMatches.head, Some(lastMyDir), dirLst)) else None
+      case Left(failure) => 
+        failure match {
+          case EmptyFollowingPathFailure(myDir) => Some((myDir, None, List[MyDir]()))
+          case _ => None
+        }
+    }
+  }
+
+  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[(Boolean, Option[Either[GFile, MyDir]])] = {
+    val tupleLst: List[(Boolean, Option[Either[GFile, MyDir]])] =
+      pathLst.map(path => {
+        verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
+
+         case Right((lastMileName, lastMyDir, _, _)) =>
+            // Replace all with "*"s with ".*"s
+            // What the regex basically is looking for is specified wildcards
+            // TODO: Maybe replace regex with if statements?
+            val regExpStr = "^" + lastMileName.replaceAll("\\*", ".*") + "$"
+            val regExp = regExpStr.r
+  
+            // Since bash's ls separates them, I decided to separate them as well
+            val childDirsFound = if (lastMileName.contains('*')) lastMyDir.childDirs.filterNot(childDir => { regExp.findFirstIn(childDir.name).equals(None) }) else lastMyDir.childDirs.filter(_.name.equals(lastMileName))
+            val childFilesFound = if (lastMileName.contains('*')) lastMyDir.childFiles.filterNot(childFile => { regExp.findFirstIn(childFile.getName).equals(None) }) else lastMyDir.childFiles.filter(_.getName.equals(lastMileName))
+
+            if (childDirsFound.isEmpty && childFilesFound.isEmpty) {
+              println("No such file or directory " + lastMileName)
+              (false, None)
+            } else if (childDirsFound.length > 1) {
+              println("Multiple matches found for last mile directory " + lastMileName +
+                ". Please use the byId variant of the command.")
+              (false, None)
+            } else {
+              val entry =
+                if (childDirsFound.length == 1) {
+                  Some(Right(childDirsFound.head))
+                } else {
+                  Some(Left(childFilesFound.head))
+                }
+              (true, entry)
+            }
+          case Left(failure) =>
+            failure match {
+              case EmptyFollowingPathFailure(myDir) => 
+                if (emptyFollowingBool) {
+                  (true, Some(Right(myDir)))
+                } else {
+                  println("Error carrying out operation with directory " + myDir.name)
+                  (false, None)
+                }
+              case _ => (false, None)
+            }
+        }
+      })
+
+    tupleLst
+  }
 }
