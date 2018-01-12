@@ -421,7 +421,7 @@ object MyDrive {
      * @param myDir directory entry to delete
      *
      */
-    def rmMyDir(myDir: MyDir): Unit = {
+    private def rmMyDir(myDir: MyDir): Unit = {
       Option(myDir.gfile.getParents.asScala).foreach(
         parents => parents.foreach(
           parentId => Try(myDirById(parentId)).foreach(
@@ -442,7 +442,7 @@ object MyDrive {
      * Deletes directories in reversed list
      *
      */
-    def rmHelper(myDir: MyDir): Unit = {
+    def rmMyDirTree(myDir: MyDir): Unit = {
       val dirQueue = Queue[MyDir]()
       var childDirs = ListBuffer[MyDir]()
 
@@ -461,6 +461,35 @@ object MyDrive {
       })
 
       rmMyDir(myDir)
+    }
+
+    def deleteVerifiedList(verifiedLst: List[Option[Either[GFile, MyDir]]]): Unit = {
+      // For each folder/file ask Google Drive to delete and check for error
+      verifiedLst.foreach(elem => {
+        elem.get match {
+          case Left(gfile) => 
+            val fileId = gfile.getId
+
+            Try(service.files.delete(fileId).execute()) match {
+              case Success(_) =>
+                rmGFile(gfile)
+              case Failure(failure) =>
+                println("Error occured in deleting " + gfile.getName + ".")
+                println(failure)
+            }
+          case Right(myDir) =>
+            val fileId = myDir.id
+
+            rmMyDirTree(myDirById(fileId))
+            Try(service.files.delete(fileId).execute()) match {
+              case Success(_) =>
+                rmMyDirTree(myDirById(fileId))
+              case Failure(failure) =>
+                println("Error occured in deleting " + myDir.name + ".")
+                println(failure)
+            }
+        }
+      })
     }
 
 
@@ -484,33 +513,7 @@ object MyDrive {
             } else {
               val verifiedLst = verifiedOrigLst.map(_._2)
   
-              // For each folder/file ask Google Drive to delete and check for error
-              verifiedLst.foreach(elem => {
-                elem.get match {
-                  case Left(gfile) => 
-                    val fileId = gfile.getId
-
-                    Try(service.files.delete(fileId).execute()) match {
-                      case Success(_) =>
-                        rmGFile(gfile)
-                      case Failure(failure) =>
-                        println("Error occured in deleting " + gfile.getName + ".")
-                        println(failure)
-                    }
-                  case Right(myDir) =>
-                    val fileId = myDir.id
-
-                    rmHelper(myDirById(fileId))
-                    Try(service.files.delete(fileId).execute()) match {
-                      case Success(_) =>
-                        rmHelper(myDirById(fileId))
-                      case Failure(failure) =>
-                        println("Error occured in deleting " + myDir.name + ".")
-                        println(failure)
-                    }
-                }
-              })
-
+              deleteVerifiedList(verifiedLst)
               CommandResult.SUCCESS
             }
           case None =>
@@ -520,6 +523,108 @@ object MyDrive {
       }
     }
   }
+
+  @CommandDefinition(name="mv", description="moves files or directories")
+  object MvCommand extends Command[CommandInvocation] {
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
+
+    @Arguments(completer = classOf[FileDirCompleter])
+    var arguments: java.util.List[String] = null
+
+    private var success: Boolean = true
+
+    private def mvHelper(destMyDir: MyDir, elem: Either[GFile, MyDir]): Unit = {
+      // TODO: We're basically checking Either twice so fix that
+      val gfile = if (elem.isLeft) elem.left.get else elem.right.get.gfile
+      val oldParents = new StringBuilder()
+      Option(gfile.getParents().asScala).foreach(
+        _.foreach(parent => {
+          oldParents ++= parent
+          oldParents ++= ","
+        }))
+
+      // TODO: Maybe execute all the commands at once or something?
+      // Currently there's a slight delay, probably due to the fact
+      // that the network is slow compared to memory
+      val tryUpdate = util.Try(service.files.update(gfile.getId, null)
+        .setAddParents(destMyDir.gfile.getId)
+        .setRemoveParents(oldParents.toString())
+        .setFields("id, parents")
+        .execute())
+
+      /* 
+       * If operation was successful
+       * Delete references to old GFile or MyDir
+       * Create new references for the destination MyDir
+       */
+      tryUpdate match {
+        case Success(newGFile) =>
+          elem match {
+            case Left(gfile) =>
+              RmCommand.rmGFile(gfile)
+              destMyDir.childFiles += newGFile
+            case Right(myDir) =>
+              RmCommand.rmMyDirTree(myDir)
+
+              val newMyDir = new MyDir(newGFile, myDir.childFiles, false)
+              newMyDir.childDirs ++= myDir.childDirs
+
+              destMyDir.childDirs += newMyDir
+          }
+        case Failure(failure) =>
+          success = false
+          println("Failure to move file/directory")
+          println(failure)
+      }
+    }
+
+    override def execute(commandInvocation: CommandInvocation): CommandResult = {
+      val argsOpt = Option(arguments.asScala)
+
+      if (help) {
+        println(commandInvocation.getHelpInfo("mv"));
+        CommandResult.SUCCESS
+      } else {
+        argsOpt match {
+          case Some(pathLst) =>
+            val verifiedOrigLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true) 
+            val verifiedOrigSrcLst = verifiedOrigLst.reverse.tail
+    
+            // If even one of the arguments doesn't check out
+            // Or if one of the arguments other than the last is the root dir
+            // Don't do anything
+            if (verifiedOrigLst.exists(_._1.equals(false)) || verifiedOrigSrcLst.exists(x => {val either = x._2.get; either.isRight && either.right.get.isRootDir})) {
+              // TODO: Specify which argument doesn't check out
+              println("Error in one of the arguments")
+              CommandResult.FAILURE
+            } else {
+              val verifiedSrcLst = verifiedOrigSrcLst.map(_._2)
+              val destDirEither = verifiedOrigLst.reverse.head._2.get
+
+              if (destDirEither.isRight) {
+                val destMyDir = destDirEither.right.get
+                verifiedSrcLst.map(elem => { mvHelper(destMyDir, elem.get) })
+                if (success) {
+                  CommandResult.SUCCESS
+                } else {
+                  CommandResult.FAILURE
+                }
+              } else {
+                println("mv: last target is not a directory")
+                CommandResult.FAILURE
+              }
+            }
+          case None =>
+            println("mv: requires at least one argument")
+            CommandResult.FAILURE
+        }
+      }
+    }
+  }
+
+
+
 
   /** 
    *  Writes state out to file in JSON format
@@ -563,6 +668,7 @@ object MyDrive {
       .addCommand(FooCommand)
       .addCommand(CdCommand)
       .addCommand(RmCommand)
+      .addCommand(MvCommand)
       .validatorInvocationProvider(new ExampleValidatorInvocationProvider())
 
     val console = consoleBuilder.create()
