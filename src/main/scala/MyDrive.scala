@@ -86,34 +86,6 @@ object MyDrive {
     }
   }
 
-  // Dummy Command
-  @CommandDefinition(name="foo", description = "fooing")
-  object FooCommand extends Command[CommandInvocation] {
-
-    @cl.Option(shortName = 'b', hasValue = false, description = "set boo to true/false")
-    var bar: String = "bar"
-    @cl.Option(shortName = 'f', hasValue = false, description = "set foo to true/false")
-    var foo: String = "foo"
-
-    @Arguments()
-    val arguments: java.util.List[String] = null
-
-    override def execute(commandInvocation: CommandInvocation): CommandResult = {
-      val out = commandInvocation.getShell.out()
-
-      if (bar == null) {
-        println("NO BAR!")
-      }
-      else {
-        println("You set bar to: " + bar)
-        println("Let's work a bit......")
-        Thread.sleep(2000)
-      }
-
-      CommandResult.SUCCESS
-    }
-  }
-
   @CommandDefinition(name="forceUpdate", description = "force update of state")
   object ForceUpdateCommand extends Command[CommandInvocation] {
     @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
@@ -665,7 +637,7 @@ object MyDrive {
                     .prompt(new Prompt("/> "))
       .addCommand(ExitCommand)
       .addCommand(LsCommand)
-      .addCommand(FooCommand)
+      .addCommand(ForceUpdateCommand)
       .addCommand(CdCommand)
       .addCommand(RmCommand)
       .addCommand(MvCommand)
