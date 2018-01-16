@@ -1,6 +1,4 @@
-Add test for veriyDir
-Add rm, mv, cp, rmdir, mkdir commands
 Add upload, download commands
 Add tests for upload and download commands
 Add help command
-Fix TimeOrdering
+Add find command

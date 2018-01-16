@@ -359,52 +359,43 @@ object MyDriveService {
     }
   }
 
-  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[(Boolean, Option[Either[GFile, MyDir]])] = {
-    val tupleLst: List[(Boolean, Option[Either[GFile, MyDir]])] =
-      pathLst.map(path => {
-        verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
+  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[Option[Either[GFile, MyDir]]] = {
+    pathLst.map(path => {
+      verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
 
-         case Right((lastMileName, lastMyDir, _, _)) =>
-            // Replace all with "*"s with ".*"s
-            // What the regex basically is looking for is specified wildcards
-            // TODO: Maybe replace regex with if statements?
-            val regExpStr = "^" + lastMileName.replaceAll("\\*", ".*") + "$"
-            val regExp = regExpStr.r
-  
-            // Since bash's ls separates them, I decided to separate them as well
-            val childDirsFound = if (lastMileName.contains('*')) lastMyDir.childDirs.filterNot(childDir => { regExp.findFirstIn(childDir.name).equals(None) }) else lastMyDir.childDirs.filter(_.name.equals(lastMileName))
-            val childFilesFound = if (lastMileName.contains('*')) lastMyDir.childFiles.filterNot(childFile => { regExp.findFirstIn(childFile.getName).equals(None) }) else lastMyDir.childFiles.filter(_.getName.equals(lastMileName))
+       case Right((lastMileName, lastMyDir, _, _)) =>
+          // Replace all with "*"s with ".*"s
+          // What the regex basically is looking for is specified wildcards
+          // TODO: Maybe replace regex with if statements?
+          val regExpStr = "^" + lastMileName.replaceAll("\\*", ".*") + "$"
+          val regExp = regExpStr.r
 
-            if (childDirsFound.isEmpty && childFilesFound.isEmpty) {
-              println("No such file or directory " + lastMileName)
-              (false, None)
-            } else if (childDirsFound.length > 1) {
-              println("Multiple matches found for last mile directory " + lastMileName +
-                ". Please use the byId variant of the command.")
-              (false, None)
-            } else {
-              val entry =
-                if (childDirsFound.length == 1) {
-                  Some(Right(childDirsFound.head))
-                } else {
-                  Some(Left(childFilesFound.head))
-                }
-              (true, entry)
-            }
-          case Left(failure) =>
-            failure match {
-              case EmptyFollowingPathFailure(myDir) => 
-                if (emptyFollowingBool) {
-                  (true, Some(Right(myDir)))
-                } else {
-                  println("Error carrying out operation with directory " + myDir.name)
-                  (false, None)
-                }
-              case _ => (false, None)
-            }
-        }
-      })
+          // Since bash's ls separates them, I decided to separate them as well
+          val childDirsFound = if (lastMileName.contains('*')) lastMyDir.childDirs.filterNot(childDir => { regExp.findFirstIn(childDir.name).equals(None) }) else lastMyDir.childDirs.filter(_.name.equals(lastMileName))
+          val childFilesFound = if (lastMileName.contains('*')) lastMyDir.childFiles.filterNot(childFile => { regExp.findFirstIn(childFile.getName).equals(None) }) else lastMyDir.childFiles.filter(_.getName.equals(lastMileName))
 
-    tupleLst
+          if (childDirsFound.isEmpty && childFilesFound.isEmpty) {
+            println("No such file or directory " + lastMileName)
+            None
+          } else if (childDirsFound.length > 1) {
+            println("Multiple matches found for last mile directory " + lastMileName +
+              ". Please use the byId variant of the command.")
+            None
+          } else {
+            if (childDirsFound.length == 1) Some(Right(childDirsFound.head)) else Some(Left(childFilesFound.head))
+          }
+        case Left(failure) =>
+          failure match {
+            case EmptyFollowingPathFailure(myDir) => 
+              if (emptyFollowingBool) {
+                Some(Right(myDir))
+              } else {
+                println("Error carrying out operation with directory " + myDir.name)
+                None
+              }
+            case _ => None
+          }
+      }
+    })
   }
 }

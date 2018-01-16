@@ -10,6 +10,9 @@ import scala.util.{Try, Success, Failure}
 import com.google.api.services.drive.Drive
 import com.google.api.services.drive.model.{File => GFile}
 import com.google.api.client.util.DateTime
+import com.google.api.client.http.HttpHeaders
+import com.google.api.client.googleapis.json.GoogleJsonError
+import com.google.api.client.googleapis.batch.json.JsonBatchCallback
 import com.google.gson.{Gson, GsonBuilder}
 import com.google.gson.reflect.TypeToken
 
@@ -233,8 +236,7 @@ object MyDrive {
       } else {
         argOpts match {
           case Some(pathLst) => 
-            val verifiedOrigLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true)
-            val verifiedLst = verifiedOrigLst.filter(_._1).map(_._2)
+            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true)
             val combinedLst = pathLst zip verifiedLst
               
             combinedLst.foreach({ case (path, elem) => {
@@ -256,7 +258,7 @@ object MyDrive {
               println()
             }})
 
-            if (verifiedOrigLst.exists(_._1.equals(false))) CommandResult.FAILURE else CommandResult.SUCCESS
+            if (verifiedLst.exists(_.isEmpty)) CommandResult.FAILURE else CommandResult.SUCCESS
          case None =>
             lsDirHelper(commandInvocation, curMyDir)
             CommandResult.SUCCESS
@@ -435,33 +437,66 @@ object MyDrive {
       rmMyDir(myDir)
     }
 
-    def deleteVerifiedList(verifiedLst: List[Option[Either[GFile, MyDir]]]): Unit = {
-      // For each folder/file ask Google Drive to delete and check for error
+    def deleteVerifiedList(verifiedLst: List[Either[GFile, MyDir]]): Unit = {
+      val successLst = ListBuffer[Boolean]()
+      val batch = service.batch()
+
+      val callback1 = new JsonBatchCallback[Void]() {
+        override def onFailure(e: GoogleJsonError, responseHeaders: HttpHeaders) = {
+          successLst += false
+          System.err.println(e.getMessage())
+        }
+
+        override def onSuccess(void: Void, responseHeaders: HttpHeaders) = {
+          successLst += true
+        }
+      }
+
+      val callback2 = new JsonBatchCallback[GFile]() {
+        override def onFailure(e: GoogleJsonError, responseHeaders: HttpHeaders) = {
+          successLst += false
+          System.err.println(e.getMessage())
+        }
+
+        override def onSuccess(gfile: GFile, responseHeaders: HttpHeaders) = {
+          successLst += true
+        }
+      }
+
       verifiedLst.foreach(elem => {
-        elem.get match {
-          case Left(gfile) => 
-            val fileId = gfile.getId
-
-            Try(service.files.delete(fileId).execute()) match {
-              case Success(_) =>
-                rmGFile(gfile)
-              case Failure(failure) =>
-                println("Error occured in deleting " + gfile.getName + ".")
-                println(failure)
-            }
+        val fileId = elem match {
+          case Left(gfile) =>
+            gfile.getId
           case Right(myDir) =>
-            val fileId = myDir.id
+            myDir.id
+        }
 
-            rmMyDirTree(myDirById(fileId))
-            Try(service.files.delete(fileId).execute()) match {
-              case Success(_) =>
-                rmMyDirTree(myDirById(fileId))
-              case Failure(failure) =>
-                println("Error occured in deleting " + myDir.name + ".")
-                println(failure)
-            }
+        if (force) {
+          service.files.delete(fileId)
+              .queue(batch, callback1)
+        } else {
+          val newGFile = new GFile()
+          newGFile.setTrashed(true)
+          service.files.update(fileId, newGFile)
+              .queue(batch, callback2)
         }
       })
+
+      batch.execute()
+
+      val combinedLst = successLst.toList zip verifiedLst
+
+      // This is assuming the requests are carried out in the order specified
+      combinedLst.foreach({ case (success, elem) => {
+        if (success) {
+          elem match {
+            case Left(gfile) =>
+              rmGFile(gfile)
+            case Right(myDir) =>
+              rmMyDirTree(myDir)
+          }
+        }
+      }})
     }
 
 
@@ -474,18 +509,16 @@ object MyDrive {
       } else {
         argsOpt match {
           case Some(pathLst) =>
-            val verifiedOrigLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, false) 
+            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, false) 
     
             // If even one of the path arguments doesn't check out
             // Don't do anything
-            if (verifiedOrigLst.exists(_._1.equals(false))) {
+            if (verifiedLst.exists(_.isEmpty)) {
               // TODO: Specify which argument doesn't check out
               println("Error in one of the arguments")
               CommandResult.FAILURE
             } else {
-              val verifiedLst = verifiedOrigLst.map(_._2)
-  
-              deleteVerifiedList(verifiedLst)
+              deleteVerifiedList(verifiedLst.map(_.get))
               CommandResult.SUCCESS
             }
           case None =>
@@ -560,19 +593,18 @@ object MyDrive {
       } else {
         argsOpt match {
           case Some(pathLst) =>
-            val verifiedOrigLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true) 
-            val verifiedOrigSrcLst = verifiedOrigLst.reverse.tail
+            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true) 
+            val verifiedSrcLst = verifiedLst.reverse.tail
     
             // If even one of the arguments doesn't check out
             // Or if one of the arguments other than the last is the root dir
             // Don't do anything
-            if (verifiedOrigLst.exists(_._1.equals(false)) || verifiedOrigSrcLst.exists(x => {val either = x._2.get; either.isRight && either.right.get.isRootDir})) {
+            if (verifiedLst.exists(_.isEmpty) || verifiedSrcLst.exists(elem => elem.get.isRight && elem.get.right.get.isRootDir)) {
               // TODO: Specify which argument doesn't check out
               println("Error in one of the arguments")
               CommandResult.FAILURE
             } else {
-              val verifiedSrcLst = verifiedOrigSrcLst.map(_._2)
-              val destDirEither = verifiedOrigLst.reverse.head._2.get
+              val destDirEither = verifiedLst.reverse.head.get
 
               if (destDirEither.isRight) {
                 val destMyDir = destDirEither.right.get
@@ -595,8 +627,80 @@ object MyDrive {
     }
   }
 
+  @CommandDefinition(name="mkdir", description = "[OPTION]... [DIRECTORY]...")
+  object MkdirCommand extends Command[CommandInvocation] {
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
 
+    @Arguments(completer = classOf[FileDirCompleter])
+    private var arguments: java.util.List[String] = null
 
+    private var success: Boolean = true
+
+    override def execute(commandInvocation: CommandInvocation): CommandResult = {
+      val argOpts = Option(arguments.asScala)
+
+      if (help) {
+        println(commandInvocation.getHelpInfo("mkdir"));
+        CommandResult.FAILURE
+      } else {
+        argOpts match {
+          case Some(pathLst) =>
+            val gfileLst = ListBuffer[GFile]()
+            val batch = service.batch()
+
+            val callback = new JsonBatchCallback[GFile]() {
+              override def onFailure(e: GoogleJsonError, responseHeaders: HttpHeaders) = {
+                success = false
+                System.err.println(e.getMessage())
+              }
+
+              override def onSuccess(gfile: GFile, responseHeaders: HttpHeaders) = {
+                println("GFile name: " + gfile.getName())
+                println("GFile parents: " + gfile.getParents())
+                gfileLst += gfile
+              }
+            }
+
+            pathLst.foreach(path => {
+              verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
+                case Right((lastMileName, lastMyDir, _, _)) =>
+                  val fileMetadata = new GFile();
+                  fileMetadata.setName(lastMileName)
+                  fileMetadata.setMimeType("application/vnd.google-apps.folder")
+                  fileMetadata.setParents(List(lastMyDir.id).asJava)
+
+                  service.files.create(fileMetadata)
+                    .setFields("kind, id, name, parents, mimeType, size, trashed, fullFileExtension, fileExtension, starred, modifiedTime, permissions")
+                    .queue(batch, callback)
+                case Left(_) => ()
+              }
+            })
+
+            batch.execute()
+
+            gfileLst.foreach(gfile => {
+                val myDir = new MyDir(gfile, ListBuffer[GFile](), false)
+
+                myDirById += gfile.getId -> myDir
+
+                gfile.getParents.asScala.foreach(parentId =>
+                    myDirById(parentId).childDirs += myDir)
+            })
+
+            if (success) {
+              CommandResult.SUCCESS
+            } else {
+              CommandResult.FAILURE
+            }
+          case None => ()
+        }
+        
+
+        CommandResult.SUCCESS
+      }
+    }
+  }
 
   /** 
    *  Writes state out to file in JSON format
@@ -641,6 +745,7 @@ object MyDrive {
       .addCommand(CdCommand)
       .addCommand(RmCommand)
       .addCommand(MvCommand)
+      .addCommand(MkdirCommand)
       .validatorInvocationProvider(new ExampleValidatorInvocationProvider())
 
     val console = consoleBuilder.create()
