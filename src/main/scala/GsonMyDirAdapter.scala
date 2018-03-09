@@ -12,7 +12,13 @@ case class GsonMyDirAdapter() extends JsonDeserializer[MyDir] {
     val jsonObj = json.getAsJsonObject
     val gfileType = new TypeToken[GFile]() {}.getType()
 
-    val gfile = Option(jsonObj.get("gfile")).map(elem => context.deserialize(elem, gfileType)).getOrElse(null)
+    //val gfile = Option(jsonObj.get("gfile")).map(elem => context.deserialize(elem, gfileType)).getOrElse(null)
+
+    val gfile = Option(jsonObj.get("gfile")) match {
+      case Some(x) =>
+        context.deserialize(x, gfileType).asInstanceOf[GFile]
+      case None => null
+    }
 
     val isRootDir = Option(jsonObj.get("isRootDir")).map(_.getAsBoolean).getOrElse(false) : Boolean
 

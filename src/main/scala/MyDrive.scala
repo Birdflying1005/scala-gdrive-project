@@ -1,5 +1,7 @@
 import java.io._
 import java.util.concurrent.Executors
+import scala.concurrent._
+            
 
 import scala.annotation.tailrec
 import scala.collection.JavaConverters._
@@ -236,29 +238,33 @@ object MyDrive {
       } else {
         argOpts match {
           case Some(pathLst) => 
-            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true)
-            val combinedLst = pathLst zip verifiedLst
+            val combinedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true)
+            //val combinedLst = pathLst zip verifiedLst
               
-            combinedLst.foreach({ case (path, elem) => {
-              elem.get match {
-                case Left(gfile) =>
-                  val output = if (showId) gfile.getName + " (" + gfile.getId + ")" else gfile.getName
-                  println(output)
-                case Right(myDir) =>
-                  if (listDirectory) {
-                    colorPrinter.print(s"$path", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
-                    colorPrinter.clear()
-                  } else {
-                    colorPrinter.print(s"$path:", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
-                    colorPrinter.clear()
-                    println()
-                    lsDirHelper(commandInvocation, myDir)
+            combinedLst.foreach({ case (elem, path) => {
+              elem match {
+                case Some(verifiedElem) =>
+                  verifiedElem match {
+                    case Left(gfile) =>
+                      val output = if (showId) gfile.getName + " (" + gfile.getId + ")" else gfile.getName
+                      println(output)
+                    case Right(myDir) =>
+                      if (listDirectory) {
+                        colorPrinter.print(s"$path", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                        colorPrinter.clear()
+                      } else {
+                        colorPrinter.print(s"$path:", Attribute.BOLD, FColor.BLUE, BColor.BLACK)
+                        colorPrinter.clear()
+                        println()
+                        lsDirHelper(commandInvocation, myDir)
+                      }
                   }
+                case None => ()
               }
               println()
             }})
 
-            if (verifiedLst.exists(_.isEmpty)) CommandResult.FAILURE else CommandResult.SUCCESS
+            if (combinedLst.map(x => x._1).exists(_.isEmpty)) CommandResult.FAILURE else CommandResult.SUCCESS
          case None =>
             lsDirHelper(commandInvocation, curMyDir)
             CommandResult.SUCCESS
@@ -509,7 +515,7 @@ object MyDrive {
       } else {
         argsOpt match {
           case Some(pathLst) =>
-            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, false) 
+            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, false).map(x => x._1)
     
             // If even one of the path arguments doesn't check out
             // Don't do anything
@@ -593,7 +599,7 @@ object MyDrive {
       } else {
         argsOpt match {
           case Some(pathLst) =>
-            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true) 
+            val verifiedLst = verifyList(rootMyDir, curMyDir, myDirStack, pathLst.toList, true).map(x => x._1) 
             val verifiedSrcLst = verifiedLst.reverse.tail
     
             // If even one of the arguments doesn't check out
@@ -626,6 +632,84 @@ object MyDrive {
       }
     }
   }
+
+  /*
+  @CommandDefinition(name="download", description = "[OPTION]... [FILES]...")
+  object DownloadCommand extends Command[CommandInvocation] {
+    @cl.Option(shortName = 'h', hasValue = false, description = "display this help and exit")
+    private var help: Boolean = false
+
+    @Arguments(completer = classOf[FileDirCompleter])
+    private var arguments: java.util.List[String] = null
+
+    private var success: Boolean = true
+
+    override def execute(commandInvocation: CommandInvocation): CommandResult = {
+      val argOpts = Option(arguments.asScala)
+
+      if (help) {
+        println(commandInvocation.getHelpInfo("mkdir"));
+        CommandResult.FAILURE
+      } else {
+        argOpts match {
+          case Some(pathLst) =>
+            if (pathLst.length != 1) {
+              println("download: takes only 1 argument")
+              CommandResult.FAILURE
+            } else {
+              implicit val ec = ExecutionContext.fromExecutor(Executors.newSingleThreadExecutor());
+              val dlFuture: Future[Unit] = Future {
+
+              }
+            }
+
+            // Verify path
+            // Download file
+            // Run progress bar in foreground
+            // ...
+
+            pathLst.foreach(path => {
+              verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
+                case Right((lastMileName, lastMyDir, _, _)) =>
+                  val fileMetadata = new GFile();
+                  fileMetadata.setName(lastMileName)
+                  fileMetadata.setMimeType("application/vnd.google-apps.folder")
+                  fileMetadata.setParents(List(lastMyDir.id).asJava)
+
+                  service.files.create(fileMetadata)
+                    .setFields("kind, id, name, parents, mimeType, size, trashed, fullFileExtension, fileExtension, starred, modifiedTime, permissions")
+                    .queue(batch, callback)
+                case Left(_) => ()
+              }
+            })
+
+            batch.execute()
+
+            gfileLst.foreach(gfile => {
+                val myDir = new MyDir(gfile, ListBuffer[GFile](), false)
+
+                myDirById += gfile.getId -> myDir
+
+                gfile.getParents.asScala.foreach(parentId =>
+                    myDirById(parentId).childDirs += myDir)
+            })
+
+            if (success) {
+              CommandResult.SUCCESS
+            } else {
+              CommandResult.FAILURE
+            }
+          case None => ()
+        }
+        
+
+        CommandResult.SUCCESS
+      }
+    }
+  }
+  */
+
+
 
   @CommandDefinition(name="mkdir", description = "[OPTION]... [DIRECTORY]...")
   object MkdirCommand extends Command[CommandInvocation] {

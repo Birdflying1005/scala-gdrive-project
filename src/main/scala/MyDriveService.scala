@@ -126,6 +126,7 @@ object MyDriveService {
     dirGFileById += rootDirId -> rootDirGFile
 
     // TODO: Parallelization
+    // ConcurrentHashMap
     
     // Add each directory to map such that (Directory ID -> GFile)
     // Add each directory to the list of directory for its parent
@@ -359,8 +360,8 @@ object MyDriveService {
     }
   }
 
-  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[Option[Either[GFile, MyDir]]] = {
-    pathLst.map(path => {
+  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[(Option[Either[GFile, MyDir]], String)] = {
+    pathLst.flatMap(path => {
       verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
 
        case Right((lastMileName, lastMyDir, _, _)) =>
@@ -376,24 +377,23 @@ object MyDriveService {
 
           if (childDirsFound.isEmpty && childFilesFound.isEmpty) {
             println("No such file or directory " + lastMileName)
-            None
-          } else if (childDirsFound.length > 1) {
-            println("Multiple matches found for last mile directory " + lastMileName +
-              ". Please use the byId variant of the command.")
-            None
+            List[(Option[Either[GFile, MyDir]], String)]((None, path))
           } else {
-            if (childDirsFound.length == 1) Some(Right(childDirsFound.head)) else Some(Left(childFilesFound.head))
+            val listBuf = ListBuffer[Option[Either[GFile, MyDir]]]()
+            if (childDirsFound.length >= 1) { childDirsFound.foreach(childDir => listBuf.append(Some(Right(childDir)))) }
+            if (childFilesFound.length >= 1) { childFilesFound.foreach(childFile => listBuf.append(Some(Left(childFile)))) }
+            listBuf.toList zip List.fill(listBuf.length)(path)
           }
         case Left(failure) =>
           failure match {
             case EmptyFollowingPathFailure(myDir) => 
               if (emptyFollowingBool) {
-                Some(Right(myDir))
+                List[(Option[Either[GFile, MyDir]], String)]((Some(Right(myDir)), path))
               } else {
                 println("Error carrying out operation with directory " + myDir.name)
-                None
+                List[(Option[Either[GFile, MyDir]], String)]((None, path))
               }
-            case _ => None
+            case _ => List[(Option[Either[GFile, MyDir]], String)]((None, path))
           }
       }
     })

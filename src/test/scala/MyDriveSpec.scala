@@ -37,17 +37,17 @@ object MyDriveSpec {
 class MyDriveSpec extends FlatSpec with Matchers {
   "verifyPath" should "return the root dir when given /" in {
     val result = verifyPath(rootMyDir, curMyDir, myDirStack, "/")
-    assert(result.isLeft && result.left.get.equals(EmptyFollowingPathFailure(rootMyDir)))
+    assert(result.isLeft && result.left.get.equals(new EmptyFollowingPathFailure(rootMyDir)))
   }
 
   it should "return DoubleDotPlacementFailure when given /cmsc422_notes/../cmsc433_notes" in {
     val result = verifyPath(rootMyDir, curMyDir, myDirStack, "/cmsc422_notes/../cmsc433_notes")
-    assert(result.isLeft && result.left.get.equals(DoubleDotPlacementFailure))
+    assert(result.isLeft && result.left.get.isInstanceOf[DoubleDotPlacementFailure])
   }
 
   it should "return DoubleDotPlacementFailure when given .../.." in {
     val result = verifyPath(rootMyDir, curMyDir, myDirStack, ".../..")
-    assert(result.isLeft && result.left.get.equals(DoubleDotPlacementFailure))
+    assert(result.isLeft && result.left.get.isInstanceOf[DoubleDotPlacementFailure])
   }
 
   it should "return DuplicateNameFailure when given /DoubleTest/DTest/Blah" in {
@@ -57,7 +57,7 @@ class MyDriveSpec extends FlatSpec with Matchers {
 
   it should "return DoubleDotCountFailure when given ../../../.." in {
     val result = verifyPath(rootMyDir, curMyDir, myDirStack, "../../../..")
-    assert(result.isLeft && result.left.get.equals(DoubleDotCountFailure))
+    assert(result.isLeft && result.left.get.isInstanceOf[DoubleDotCountFailure])
   }
 
   it should "return InvalidPathFailure when given /ARTH200 Notes/Dropbox/HelloWorld/Dillinger" in {
