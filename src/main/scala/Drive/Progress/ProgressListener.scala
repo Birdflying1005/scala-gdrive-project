@@ -1,3 +1,5 @@
+package Drive.Progress
+
 import math._
 
 class ProgressListener(availableBytes: Long, tracker: Progress => Unit) extends Function1[Long, Unit] {

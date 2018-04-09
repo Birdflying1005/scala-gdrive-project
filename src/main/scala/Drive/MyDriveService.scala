@@ -1,3 +1,11 @@
+package Drive
+
+import Drive.Util._
+
+import Drive.MyDriveState.rootMyDir
+import Drive.MyDriveState.curMyDir
+import Drive.MyDriveState.myDirStack
+
 import scala.annotation.tailrec
 import scala.collection.mutable.ListBuffer
 import scala.collection.mutable.Queue
@@ -213,7 +221,7 @@ object MyDriveService {
    * @return an instance of VerifyPathFailure or a tuple with last-mile file/directory
    *      2nd-to-last dir (as MyDir), directory list, and a boolean (for leading slash)
    */
-  def verifyPath(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, path: String): Either[VerifyPathFailure, (String, MyDir, List[MyDir], Boolean)] = {
+  def verifyPath(path: String): Either[VerifyPathFailure, (String, MyDir, List[MyDir], Boolean)] = {
     @tailrec
     def verifyDirs(curDir: MyDir, theLst: List[String], acc: ListBuffer[MyDir], leadingSlash: Boolean):
     Either[VerifyPathFailure, (String, MyDir, List[MyDir], Boolean)] = {
@@ -345,8 +353,8 @@ object MyDriveService {
    * @param dirpath path to dir 
    * @return Some(MyDir) or None
    */
-  def verifyDirectory(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, dirpath: String): Option[(MyDir, Option[MyDir], List[MyDir])] = {
-    verifyPath(rootMyDir, curMyDir, myDirStack, dirpath) match {
+  def verifyDirectory(dirpath: String): Option[(MyDir, Option[MyDir], List[MyDir])] = {
+    verifyPath(dirpath) match {
       case Right((lastDirName, lastMyDir, dirLst, _)) =>
         val dirMatches = lastMyDir.childDirs.filter(_.name == lastDirName)
         // We need to check length here because there can be 2 same name directories
@@ -360,9 +368,9 @@ object MyDriveService {
     }
   }
 
-  def verifyList(rootMyDir: MyDir, curMyDir: MyDir, myDirStack: MyDirStack, pathLst: List[String], emptyFollowingBool: Boolean): List[(Option[Either[GFile, MyDir]], String)] = {
+  def verifyList(pathLst: List[String], emptyFollowingBool: Boolean): List[(Option[Either[GFile, MyDir]], String)] = {
     pathLst.flatMap(path => {
-      verifyPath(rootMyDir, curMyDir, myDirStack, path) match {
+      verifyPath(path) match {
 
        case Right((lastMileName, lastMyDir, _, _)) =>
           // Replace all with "*"s with ".*"s

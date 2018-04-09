@@ -1,3 +1,5 @@
+package Drive.GsonAdapters
+
 import com.google.gson._
 import com.google.gson.reflect.TypeToken
 import com.google.api.services.drive.model.{File => GFile}

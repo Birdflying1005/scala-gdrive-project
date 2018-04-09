@@ -1,3 +1,5 @@
+package Drive.Progress
+
 import java.io.{FilterOutputStream, OutputStream}
 
 class ProgressOutputStream(out: OutputStream, listener: Long => Unit) extends FilterOutputStream(out) {

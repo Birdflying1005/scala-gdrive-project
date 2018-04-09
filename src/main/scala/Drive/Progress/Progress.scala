@@ -1,3 +1,5 @@
+package Drive.Progress
+
 import math._
 
 case class Progress(percent: Int, size: Long, remains: Long, done: Long, bps: Long, elapsed: Long, estimated: Long) {
